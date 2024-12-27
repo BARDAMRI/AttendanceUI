@@ -1,212 +1,164 @@
-import React, { useState } from 'react';
+import React, {useEffect, useState} from 'react';
 import './MainPage.css';
-import axios from 'axios';
+import axios, {AxiosResponse} from 'axios';
 import configData from '../server-config.json';
 
-interface SignInOutResponse {
-  message: string;
-  employee_details: {
+interface Submission {
     id: number;
     name: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    status: string;
+}
+
+
+export interface WorkerDetails {
+    firstName: string;
+    lastName: string;
     role: string;
     manager: string | null;
-  };
-  timestamp: string;
 }
 
-interface Submission {
-  id: number;
-  name: string;
-  date: string;
-  startTime: string;
-  endTime: string;
-  status: string;
+
+interface MainPageProps {
+    workerDetails: WorkerDetails;
+    logout: () => any;
 }
 
-const MainPage: React.FC = () => {
-  const workerDetails = {
-    firstName: 'Paul',
-    lastName: 'Mccartney',
-    role: 'Full Stack Developer',
-    manager: 'John Lennon',
-  };
+function MainPage(props: MainPageProps) {
+    const [submittedRequests, setSubmittedRequests] = useState<Submission[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [popupVisible, setPopupVisible] = useState(false);
+    const [popupAction, setPopupAction] = useState<'Clock In' | 'Clock Out' | null>(null);
+    const [reportText, setReportText] = useState('');
 
-  const [submittedRequests, setSubmittedRequests] = useState<Submission[]>([
-    { id: 1, name: 'George Harrison', date: '12/12/2024', startTime: '09:00', endTime: '18:00', status: 'Pending' },
-    { id: 2, name: 'Ringo Starr', date: '12/12/2024', startTime: '10:00', endTime: '17:00', status: 'Pending' },
-  ]);
 
-  const [popupVisible, setPopupVisible] = useState(false);
-  const [popupAction, setPopupAction] = useState<'Clock In' | 'Clock Out' | null>(null);
-  const [reportText, setReportText] = useState('');
-  const [loading, setLoading] = useState(false); // Loading state for server requests
-  const [serverResponse, setServerResponse] = useState<SignInOutResponse | null>(null);
+    useEffect(() => {
+        const fetchSubmissions = async () => {
+            try {
+                // Check if the worker is a manager
+                if (props.workerDetails.role.toLowerCase() === 'manager') {
+                    // Construct the full name of the manager
+                    const fullName = `${props.workerDetails.firstName} ${props.workerDetails.lastName}`;
 
-  const handleClockAction = async (action: 'Clock In' | 'Clock Out') => {
-    setPopupAction(action);
-    setPopupVisible(true);
-  };
+                    // Fetch submissions for employees managed by this manager
+                    const submissionsResponse = await axios.get<Submission[]>(
+                        `${configData['server-address']}/manager-submissions/${fullName}`
+                    );
+                    setSubmittedRequests(submissionsResponse.data);
+                } else {
+                    // Clear submissions if the worker is not a manager
+                    setSubmittedRequests([]);
+                }
+            } catch (error) {
+                console.error('Failed to fetch submissions:', error);
+            } finally {
+                setLoading(false);
+            }
+        };
 
-  const handleSave = async () => {
-    const fullName = `${workerDetails.firstName} ${workerDetails.lastName}`;
-    setLoading(true);
+        fetchSubmissions();
+    }, [props.workerDetails]);
+    const handleClockAction = (action: 'Clock In' | 'Clock Out') => {
+        setPopupAction(action);
+        setPopupVisible(true);
+    };
 
-    try {
-      const response = await axios.post<SignInOutResponse>(configData["server-address"] +'sign-in-out', {
-        name: fullName,
-        action: popupAction,
-      });
+    const handleSave = async () => {
+        setLoading(true);
 
-      setServerResponse(response.data);
-      console.log('Server Response:', response.data);
+        try {
+            // TODO: Replace with the real server endpoint to log clock in/out actions
+            const response = await axios.post(`${configData['server-address']}/sign-in-out`, {
+                name: props.workerDetails.firstName + ' ' + props.workerDetails.lastName,
+                action: popupAction,
+                details: reportText,
+            });
+            console.log('Clock action response:', response.data);
+            setPopupVisible(false);
+            setReportText('');
+        } catch (error) {
+            console.error('Error while saving the clock action:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
 
-      const currentDate = new Date().toLocaleDateString();
-      setSubmittedRequests((prev) => [
-        ...prev,
-        {
-          id: prev.length + 1,
-          name: fullName,
-          date: currentDate,
-          startTime: popupAction === 'Clock In' ? '09:00' : '',
-          endTime: popupAction === 'Clock Out' ? '18:00' : '',
-          status: 'Pending',
-        },
-      ]);
-
-      setPopupVisible(false);
-      setReportText('');
-      setPopupAction(null);
-    } catch (error) {
-      console.error('Error while communicating with the server:', error);
-      alert('Failed to log the action. Please try again.');
-    } finally {
-      setLoading(false);
+    if (loading) {
+        return <div>Loading...</div>;
     }
-  };
 
-  const handleTableAction = (id: number, action: 'Approve' | 'Reject') => {
-    setSubmittedRequests((prev) =>
-      prev.map((request) =>
-        request.id === id
-          ? { ...request, status: action }
-          : request
-      )
-    );
-  };
+    if (!props.workerDetails) {
+        return <div>Failed to load worker details.</div>;
+    }
 
-  const prettify = (key: string): string => {
-    return key
-      .replace(/_/g, ' ') // Replace underscores with spaces
-      .replace(/\b\w/g, (char) => char.toUpperCase()); // Capitalize the first letter of each word
-  };
-
-  const tableHeaders = Object.keys(submittedRequests[0]).filter((key) => key !== 'id' && key !== 'status');
-
-  return (
-    <div className="main-page">
-      <div className="worker-details">
-        <h3>Employee Details</h3>
-        <div className="details-grid">
-          <p>
-            <strong>First Name:</strong> {workerDetails.firstName}
-          </p>
-          <p>
-            <strong>Last Name:</strong> {workerDetails.lastName}
-          </p>
-          <p>
-            <strong>Role:</strong> {workerDetails.role}
-          </p>
-          <p>
-            <strong>Manager:</strong> {workerDetails.manager}
-          </p>
-        </div>
-        <div className="clock-buttons">
-          <button
-            className="clock-button"
-            onClick={() => handleClockAction('Clock In')}
-            disabled={loading}
-          >
-            Clock In
-          </button>
-          <button
-            className="clock-button"
-            onClick={() => handleClockAction('Clock Out')}
-            disabled={loading}
-          >
-            Clock Out
-          </button>
-        </div>
-      </div>
-
-      <div className="submitted-requests">
-        <h3>Submitted Reports</h3>
-        <table>
-          <thead>
-            <tr>
-              {tableHeaders.map((header) => (
-                <th key={header}>{prettify(header)}</th>
-              ))}
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {submittedRequests.map((request) => (
-              <tr key={request.id}>
-                {tableHeaders.map((header) => (
-                  <td key={header}>{request[header as keyof Submission]}</td>
-                ))}
-                <td>
-                  {request.status === 'Pending' ? (
-                    <>
-                      <button
-                        className="action-button approve"
-                        onClick={() => handleTableAction(request.id, 'Approve')}
-                      >
-                        Approve
-                      </button>
-                      <button
-                        className="action-button reject"
-                        onClick={() => handleTableAction(request.id, 'Reject')}
-                      >
-                        Reject
-                      </button>
-                    </>
-                  ) : (
-                    <span>{request.status}</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {popupVisible && (
-        <div className="popup">
-          <div className="popup-content">
-            <h4>{popupAction} Report</h4>
-            <textarea
-              value={reportText}
-              onChange={(e) => setReportText(e.target.value)}
-              placeholder="Enter report details..."
-            />
-            <div className="popup-buttons">
-              <button onClick={handleSave} className="popup-save" disabled={loading}>
-                {loading ? 'Saving...' : 'Save'}
-              </button>
-              <button
-                onClick={() => setPopupVisible(false)}
-                className="popup-cancel"
-                disabled={loading}
-              >
-                Cancel
-              </button>
+    return (
+        <div className="main-page">
+            <button className="logout-button" onClick={props.logout}>
+                Logout
+            </button>
+            <div className="worker-details">
+                <h3>Employee Details</h3>
+                <p>
+                    <strong>First Name:</strong> {props.workerDetails.firstName}
+                </p>
+                <p>
+                    <strong>Last Name:</strong> {props.workerDetails.lastName}
+                </p>
+                <p>
+                    <strong>Role:</strong> {props.workerDetails.role}
+                </p>
+                <p>
+                    <strong>Manager:</strong> {props.workerDetails.manager || 'None'}
+                </p>
+                <div className="clock-buttons">
+                    <button className={'clock-button'} onClick={() => handleClockAction('Clock In')}>Clock In</button>
+                    <button className={'clock-button'} onClick={() => handleClockAction('Clock Out')}>Clock Out</button>
+                </div>
             </div>
-          </div>
+
+            <div className="submitted-requests">
+                <h3>Submitted Reports</h3>
+                <table>
+                    <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Date</th>
+                        <th>Start Time</th>
+                        <th>End Time</th>
+                        <th>Status</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {submittedRequests.map((request) => (
+                        <tr key={request.id}>
+                            <td>{request.name}</td>
+                            <td>{request.date}</td>
+                            <td>{request.startTime}</td>
+                            <td>{request.endTime}</td>
+                            <td>{request.status}</td>
+                        </tr>
+                    ))}
+                    </tbody>
+                </table>
+            </div>
+
+            {popupVisible && (
+                <div className="popup">
+                    <textarea
+                        value={reportText}
+                        onChange={(e) => setReportText(e.target.value)}
+                        placeholder="Enter report details..."
+                    />
+                    <div className={'popup-buttons'}>
+                        <button className={'popup-save'} onClick={handleSave}>Save</button>
+                        <button className={'popup-cancel'} onClick={() => setPopupVisible(false)}>Cancel</button>
+                    </div>
+                </div>
+            )}
         </div>
-      )}
-    </div>
-  );
+    );
 };
 
 export default MainPage;
