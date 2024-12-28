@@ -146,11 +146,9 @@ async def reset_manager_submissions(manager_name: str):
     if not manager:
         raise HTTPException(status_code=404, detail="Manager not found.")
 
-    # Get employees managed by this manager
     employees = db.employees.find({"manager": manager_name})
     employee_names = [emp["name"] for emp in employees]
 
-    # Delete submissions for managed employees
     result = db.submissions.delete_many({"name": {"$in": employee_names}})
     return {"message": f"Deleted {result.deleted_count} submissions."}
 
@@ -161,13 +159,11 @@ async def update_submission(submission_id: str, request: UpdateSubmissionRequest
     if request.action not in ["Approve", "Reject"]:
         raise HTTPException(status_code=400, detail="Invalid result. Must be 'Approved' or 'Rejected'.")
 
-    # Find and update the submission
     result = db.submissions.update_one(
         {"_id": ObjectId(submission_id), "status": "Pending"},
         {"$set": {"status": request.action}}
     )
 
-    # Check if the submission was found and updated
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Submission not found or already updated.")
 
