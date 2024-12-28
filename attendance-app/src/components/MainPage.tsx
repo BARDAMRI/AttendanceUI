@@ -58,7 +58,14 @@ function MainPage(props: MainPageProps) {
                     setSubmittedRequests([]);
                 }
             } catch (error) {
-                console.error('Failed to fetch submissions:', error);
+                if (axios.isAxiosError(error)) {
+                    const errorMessage = error.response?.data?.detail || "An unexpected error occurred.";
+                    console.error('Failed to fetch submissions:', errorMessage);
+                    showBanner(errorMessage, 'red');
+                } else {
+                    console.error('Failed to fetch submissions:', error);
+                    showBanner('Failed to fetch submissions. Please try again.', 'red');
+                }
             } finally {
                 setLoading(false);
             }
@@ -89,14 +96,12 @@ function MainPage(props: MainPageProps) {
         } catch (error) {
             if (axios.isAxiosError(error)) {
                 const errorMessage = error.response?.data?.detail || "An unexpected error occurred.";
-                console.error('Error while saving the clock action:', errorMessage);
+                console.error('Failed to perform the sign action:', errorMessage);
                 showBanner(errorMessage, 'red');
             } else {
-                console.error('Error while saving the clock action:', error);
-                showBanner('Failed to perform the action. Please try again.', 'red');
+                console.error('Failed to perform the sign action:', error);
+                showBanner('Failed to perform the sign action. Please try again.', 'red');
             }
-
-
         } finally {
             setLoading(false);
             setPopup({...popup, displayed: false});
@@ -116,8 +121,14 @@ function MainPage(props: MainPageProps) {
                 )
             );
         } catch (error) {
-            console.error('Failed to update submission:', error);
-            showBanner('Failed to update the submission.', 'red');
+            if (axios.isAxiosError(error)) {
+                const errorMessage = error.response?.data?.detail || "An unexpected error occurred.";
+                console.error('Failed to update submission:', errorMessage);
+                showBanner(errorMessage, 'red');
+            } else {
+                console.error('Failed to update submission:', error);
+                showBanner('Failed to update submission. Please try again.', 'red');
+            }
         }
     };
 
@@ -128,8 +139,14 @@ function MainPage(props: MainPageProps) {
             showBanner(response.data.message, 'green');
             setSubmittedRequests([]); // Clear the table
         } catch (error) {
-            console.error('Failed to reset submissions:', error);
-            showBanner('Failed to reset submissions.', 'red');
+            if (axios.isAxiosError(error)) {
+                const errorMessage = error.response?.data?.detail || "An unexpected error occurred.";
+                console.error('Failed to reset submissions:', errorMessage);
+                showBanner(errorMessage, 'red');
+            } else {
+                console.error('Failed to reset submissions:', error);
+                showBanner('Failed to reset submissions. Please try again.', 'red');
+            }
         }
     };
 

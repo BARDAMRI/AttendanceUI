@@ -8,10 +8,10 @@ from bson import ObjectId
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins. Replace "*" with specific origins in production
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all HTTP methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 client = MongoClient("mongodb://localhost:27017")
 db = client.attendance_system
@@ -40,16 +40,15 @@ class UpdateSubmissionRequest(BaseModel):
 
 @app.post("/login", response_model=LoginResponse)
 async def login(request: LoginRequest):
-    # Validate employee
+
     employee = db.employees.find_one({"name": request.name})
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
 
-    # Check password (same as name)
+    # Here we assumed the name and password will be the same.
     if request.password != employee["name"]:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    # Return employee details
     return {
         "id": employee["id"],
         "name": employee["name"],
@@ -120,22 +119,19 @@ async def sign_in_out(request: SignInOutRequest):
 
 
 def serialize_document(doc):
-    doc["_id"] = str(doc["_id"])  # Convert ObjectId to string
+    doc["_id"] = str(doc["_id"])
     return doc
 
 
 @app.get("/manager-submissions/{manager_name}")
 async def get_manager_submissions(manager_name: str):
-    # Check if the user is a valid manager
     worker_details = db.employees.find_one({"name": manager_name})
     if not worker_details['manager'] is None:
-        raise HTTPException(status_code=403, detail="Access denied. User is not a manager.")
+        raise HTTPException(status_code=411, detail="Access denied. User is not a manager.")
 
-    # Get the list of employees reporting to this manager
     employees = db.employees.find({"manager": manager_name})
     employee_names = [emp["name"] for emp in employees]
 
-    # Find all submissions for these employees
     submissions = db.submissions.find({"name": {"$in": employee_names}})
     submission_list = [serialize_document(sub) for sub in submissions]
     if not submission_list:
@@ -146,7 +142,6 @@ async def get_manager_submissions(manager_name: str):
 
 @app.delete("/manager-submissions/{manager_name}")
 async def reset_manager_submissions(manager_name: str):
-    # Verify the manager exists
     manager = db.employees.find_one({"name": manager_name, "role": "Manager"})
     if not manager:
         raise HTTPException(status_code=404, detail="Manager not found.")
