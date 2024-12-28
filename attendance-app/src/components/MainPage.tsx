@@ -121,6 +121,18 @@ function MainPage(props: MainPageProps) {
         }
     };
 
+    const handleResetRequests = async () => {
+        try {
+            const fullName = `${props.workerDetails.firstName} ${props.workerDetails.lastName}`;
+            const response = await axios.delete(`${configData['server-address']}/manager-submissions/${fullName}`);
+            showBanner(response.data.message, 'green');
+            setSubmittedRequests([]); // Clear the table
+        } catch (error) {
+            console.error('Failed to reset submissions:', error);
+            showBanner('Failed to reset submissions.', 'red');
+        }
+    };
+
     const showBanner = (message: string, color = 'greed') => {
         setBanner({color: color, displayed: true, message: message} as BannerMessage);
         setTimeout(() => {
@@ -161,7 +173,12 @@ function MainPage(props: MainPageProps) {
             {props?.workerDetails &&
                 !props?.workerDetails?.manager &&
                 <div className="submitted-requests">
-                    <h3>Submitted Reports</h3>
+                    <div className={'table-headers'}>
+                        <h3>Submitted Reports</h3>
+                        <button className="reset-button" onClick={handleResetRequests}>
+                            Reset
+                        </button>
+                    </div>
                     <table>
                         <thead>
                         <tr>

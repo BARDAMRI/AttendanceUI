@@ -144,6 +144,22 @@ async def get_manager_submissions(manager_name: str):
     return submission_list
 
 
+@app.delete("/manager-submissions/{manager_name}")
+async def reset_manager_submissions(manager_name: str):
+    # Verify the manager exists
+    manager = db.employees.find_one({"name": manager_name, "role": "Manager"})
+    if not manager:
+        raise HTTPException(status_code=404, detail="Manager not found.")
+
+    # Get employees managed by this manager
+    employees = db.employees.find({"manager": manager_name})
+    employee_names = [emp["name"] for emp in employees]
+
+    # Delete submissions for managed employees
+    result = db.submissions.delete_many({"name": {"$in": employee_names}})
+    return {"message": f"Deleted {result.deleted_count} submissions."}
+
+
 @app.patch("/update-submission/{submission_id}")
 async def update_submission(submission_id: str, request: UpdateSubmissionRequest):
     # Validate the result value
