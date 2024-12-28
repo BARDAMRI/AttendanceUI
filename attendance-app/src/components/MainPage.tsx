@@ -1,17 +1,17 @@
 import React, {useEffect, useState} from 'react';
 import './MainPage.css';
-import axios, {AxiosResponse} from 'axios';
+import axios from 'axios';
 import configData from '../server-config.json';
 
 interface Submission {
+    _id: string;
     id: number;
     name: string;
     date: string;
-    startTime: string;
-    endTime: string;
+    start_time: string;
+    end_time: string;
     status: string;
 }
-
 
 export interface WorkerDetails {
     firstName: string;
@@ -20,35 +20,41 @@ export interface WorkerDetails {
     manager: string | null;
 }
 
-
 interface MainPageProps {
     workerDetails: WorkerDetails;
-    logout: () => any;
+    logout: () => void;
+}
+
+interface BannerMessage {
+    message: string;
+    color: 'red' | 'green';
+    displayed: boolean;
+}
+
+export enum Action {
+    Approve = 'Approve',
+    Reject = 'Reject',
+    Pending = 'Pending'
 }
 
 function MainPage(props: MainPageProps) {
     const [submittedRequests, setSubmittedRequests] = useState<Submission[]>([]);
     const [loading, setLoading] = useState(true);
-    const [popupVisible, setPopupVisible] = useState(false);
+    const [popup, setPopup] = useState<BannerMessage>({color: "green", displayed: false, message: ""})
     const [popupAction, setPopupAction] = useState<'Clock In' | 'Clock Out' | null>(null);
     const [reportText, setReportText] = useState('');
-
+    const [banner, setBanner] = useState<BannerMessage>({color: "green", displayed: false, message: ""})
 
     useEffect(() => {
         const fetchSubmissions = async () => {
             try {
-                // Check if the worker is a manager
                 if (props.workerDetails.role.toLowerCase() === 'manager') {
-                    // Construct the full name of the manager
                     const fullName = `${props.workerDetails.firstName} ${props.workerDetails.lastName}`;
-
-                    // Fetch submissions for employees managed by this manager
                     const submissionsResponse = await axios.get<Submission[]>(
                         `${configData['server-address']}/manager-submissions/${fullName}`
                     );
                     setSubmittedRequests(submissionsResponse.data);
                 } else {
-                    // Clear submissions if the worker is not a manager
                     setSubmittedRequests([]);
                 }
             } catch (error) {
@@ -60,42 +66,72 @@ function MainPage(props: MainPageProps) {
 
         fetchSubmissions();
     }, [props.workerDetails]);
+
     const handleClockAction = (action: 'Clock In' | 'Clock Out') => {
         setPopupAction(action);
-        setPopupVisible(true);
+        setPopup({
+            ...popup,
+            displayed: true,
+            message: `Insert request to ${action} action`
+        });
     };
 
     const handleSave = async () => {
         setLoading(true);
 
         try {
-            // TODO: Replace with the real server endpoint to log clock in/out actions
             const response = await axios.post(`${configData['server-address']}/sign-in-out`, {
                 name: props.workerDetails.firstName + ' ' + props.workerDetails.lastName,
                 action: popupAction,
                 details: reportText,
             });
-            console.log('Clock action response:', response.data);
-            setPopupVisible(false);
-            setReportText('');
+            showBanner(response.data.message, response.status === 200 ? 'green' : 'red');
         } catch (error) {
-            console.error('Error while saving the clock action:', error);
+            if (axios.isAxiosError(error)) {
+                const errorMessage = error.response?.data?.detail || "An unexpected error occurred.";
+                console.error('Error while saving the clock action:', errorMessage);
+                showBanner(errorMessage, 'red');
+            } else {
+                console.error('Error while saving the clock action:', error);
+                showBanner('Failed to perform the action. Please try again.', 'red');
+            }
+
+
         } finally {
             setLoading(false);
+            setPopup({...popup, displayed: false});
+            setReportText('');
         }
     };
 
-    if (loading) {
-        return <div>Loading...</div>;
-    }
+    const handleTableAction = async (id: string, action: Action.Approve | Action.Reject) => {
+        try {
+            const response = await axios.patch(`${configData['server-address']}/update-submission/${id}`, {
+                action,
+            });
+            showBanner(response.data.message, response.status === 200 ? 'green' : 'red');
+            setSubmittedRequests((prev) =>
+                prev.map((request) =>
+                    request._id === id ? {...request, status: action} : request
+                )
+            );
+        } catch (error) {
+            console.error('Failed to update submission:', error);
+            showBanner('Failed to update the submission.', 'red');
+        }
+    };
 
-    if (!props.workerDetails) {
-        return <div>Failed to load worker details.</div>;
-    }
-
+    const showBanner = (message: string, color = 'greed') => {
+        setBanner({color: color, displayed: true, message: message} as BannerMessage);
+        setTimeout(() => {
+            setBanner({color: color, displayed: false, message: ''} as BannerMessage);
+        }, 4000);
+    };
     return (
         <div className="main-page">
-            <button className="logout-button" onClick={props.logout}>
+            <button className="logout-button" onClick={() => {
+                props.logout();
+            }}>
                 Logout
             </button>
             <div className="worker-details">
@@ -113,52 +149,92 @@ function MainPage(props: MainPageProps) {
                     <strong>Manager:</strong> {props.workerDetails.manager || 'None'}
                 </p>
                 <div className="clock-buttons">
-                    <button className={'clock-button'} onClick={() => handleClockAction('Clock In')}>Clock In</button>
-                    <button className={'clock-button'} onClick={() => handleClockAction('Clock Out')}>Clock Out</button>
+                    <button className="clock-button" onClick={() => handleClockAction('Clock In')}>
+                        Clock In
+                    </button>
+                    <button className="clock-button" onClick={() => handleClockAction('Clock Out')}>
+                        Clock Out
+                    </button>
                 </div>
             </div>
 
-            <div className="submitted-requests">
-                <h3>Submitted Reports</h3>
-                <table>
-                    <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Date</th>
-                        <th>Start Time</th>
-                        <th>End Time</th>
-                        <th>Status</th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                    {submittedRequests.map((request) => (
-                        <tr key={request.id}>
-                            <td>{request.name}</td>
-                            <td>{request.date}</td>
-                            <td>{request.startTime}</td>
-                            <td>{request.endTime}</td>
-                            <td>{request.status}</td>
+            {props?.workerDetails &&
+                !props?.workerDetails?.manager &&
+                <div className="submitted-requests">
+                    <h3>Submitted Reports</h3>
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Date</th>
+                            <th>Start Time</th>
+                            <th>End Time</th>
+                            <th>Status</th>
                         </tr>
-                    ))}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                        {submittedRequests.map((request) => (
+                            <tr key={request.id}>
+                                <td>{request.name}</td>
+                                <td>{request.date}</td>
+                                <td>{request.start_time}</td>
+                                <td>{request.end_time}</td>
+                                <td>
+                                    {request.status === Action.Pending ? (
+                                        <>
+                                            <button
+                                                className="action-button approve"
+                                                onClick={() => handleTableAction(request._id, Action.Approve)}
+                                            >
+                                                Approve
+                                            </button>
+                                            <button
+                                                className="action-button reject"
+                                                onClick={() => handleTableAction(request._id, Action.Reject)}
+                                            >
+                                                Reject
+                                            </button>
+                                        </>
+                                    ) : (
+                                        request.status
+                                    )}
+                                </td>
+                            </tr>
+                        ))}
+                        </tbody>
+                    </table>
+                </div>
+
+            }
+            <div className={`popup-banner ${banner.displayed ? 'visible' : 'hidden'}`}
+                 style={{backgroundColor: banner.color}}>
+                {banner.message}
             </div>
 
-            {popupVisible && (
+            {popup.displayed && (
                 <div className="popup">
                     <textarea
                         value={reportText}
                         onChange={(e) => setReportText(e.target.value)}
                         placeholder="Enter report details..."
                     />
-                    <div className={'popup-buttons'}>
-                        <button className={'popup-save'} onClick={handleSave}>Save</button>
-                        <button className={'popup-cancel'} onClick={() => setPopupVisible(false)}>Cancel</button>
+                    <div className="popup-buttons">
+                        <button className="popup-save" onClick={handleSave}>
+                            Save
+                        </button>
+                        <button className="popup-cancel" onClick={() => {
+                            setPopup({color: 'green', message: '', displayed: false} as BannerMessage)
+                            setReportText('')
+                        }}>
+                            Cancel
+                        </button>
                     </div>
+                    <br/>
+                    {loading && <div className={'loading-sign'}>Loading...</div>}
                 </div>
             )}
         </div>
     );
-};
+}
 
 export default MainPage;

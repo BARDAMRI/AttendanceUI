@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from datetime import datetime
 from fastapi.middleware.cors import CORSMiddleware
 from pymongo import MongoClient
+from bson import ObjectId
 
 app = FastAPI()
 app.add_middleware(
@@ -31,6 +32,10 @@ class LoginResponse(BaseModel):
     name: str
     role: str
     manager: str | None
+
+
+class UpdateSubmissionRequest(BaseModel):
+    action: str
 
 
 @app.post("/login", response_model=LoginResponse)
@@ -71,7 +76,7 @@ async def sign_in_out(request: SignInOutRequest):
 
         if existing_sign_in:
             raise HTTPException(
-                status_code=402,
+                status_code=409,
                 detail="There is already a sign-in for today without a sign-out"
             )
 
@@ -114,12 +119,16 @@ async def sign_in_out(request: SignInOutRequest):
         raise HTTPException(status_code=400, detail="Invalid action. Use 'Clock In' or 'Clock Out'.")
 
 
+def serialize_document(doc):
+    doc["_id"] = str(doc["_id"])  # Convert ObjectId to string
+    return doc
+
 
 @app.get("/manager-submissions/{manager_name}")
 async def get_manager_submissions(manager_name: str):
     # Check if the user is a valid manager
-    manager = db.employees.find_one({"name": manager_name, "role": {"$regex": "^Manager$", "$options": "i"}})
-    if not manager:
+    worker_details = db.employees.find_one({"name": manager_name})
+    if not worker_details['manager'] is None:
         raise HTTPException(status_code=403, detail="Access denied. User is not a manager.")
 
     # Get the list of employees reporting to this manager
@@ -128,12 +137,30 @@ async def get_manager_submissions(manager_name: str):
 
     # Find all submissions for these employees
     submissions = db.submissions.find({"name": {"$in": employee_names}})
-    submission_list = list(submissions)  # Convert cursor to list
-
+    submission_list = [serialize_document(sub) for sub in submissions]
     if not submission_list:
-        raise HTTPException(status_code=404, detail="No submissions found for this manager's employees.")
+        return list([])
 
     return submission_list
+
+
+@app.patch("/update-submission/{submission_id}")
+async def update_submission(submission_id: str, request: UpdateSubmissionRequest):
+    # Validate the result value
+    if request.action not in ["Approve", "Reject"]:
+        raise HTTPException(status_code=400, detail="Invalid result. Must be 'Approved' or 'Rejected'.")
+
+    # Find and update the submission
+    result = db.submissions.update_one(
+        {"_id": ObjectId(submission_id), "status": "Pending"},
+        {"$set": {"status": request.action}}
+    )
+
+    # Check if the submission was found and updated
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Submission not found or already updated.")
+
+    return {"message": f"Submission updated to {request.action}"}
 
 
 if __name__ == "__main__":
